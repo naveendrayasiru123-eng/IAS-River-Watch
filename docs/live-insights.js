@@ -44,7 +44,7 @@
     $('insights-status').textContent=`Updated ${new Date(data.updatedAt).toLocaleString('en-LK',{timeZone:'Asia/Colombo',dateStyle:'medium',timeStyle:'short'})} (Sri Lanka). Verified records appear after admin review.`;
   }
   let loading=false;
-  async function load(){if(loading)return;loading=true;$('insights-status').textContent='Loading reviewed observations…';try{const response=await fetch('/api/insights',{cache:'no-store'});const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||'Insights unavailable.');render(data);}catch(error){$('insights-status').textContent=error.message||'Insights unavailable.';}finally{loading=false;}}
+  async function load(){if(loading)return;loading=true;$('insights-status').textContent='Loading reviewed observations…';try{const response=await window.IAS_API.fetch('/api/insights',{cache:'no-store'});const data=await window.IAS_API.json(response);if(!response.ok||!data.ok)throw new Error(data.error||'Insights unavailable.');render(data);}catch(error){$('insights-status').textContent=error.message||'Insights unavailable.';}finally{loading=false;}}
   window.loadInsights=load;
   window.addEventListener('ias-review-updated',load);
   window.addEventListener('ias-report-saved',load);

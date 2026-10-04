@@ -1,8 +1,9 @@
+import { withPagesCors, pagesOptions } from '../pages';
 import { env } from 'cloudflare:workers';
 import candidates from '../sample-candidates.json';
 
 export const runtime = 'edge';
-export async function GET() {
+async function handleGET() {
   if (!env.DB) return Response.json({ok:false,error:'Insights are unavailable.'},{status:503});
   try {
     const [reports,samples] = await Promise.all([
@@ -17,3 +18,6 @@ export async function GET() {
     return Response.json({ok:true,pendingCount:pending.length,pendingByBasin,totalSubmissions:reports.results.length,monthlyCounts,verifiedReports,verifiedSamples,sampleCandidates:candidates.length,updatedAt:new Date().toISOString()},{headers:{'Cache-Control':'public, max-age=30'}});
   } catch(error) { console.error('IAS insights failed',error); return Response.json({ok:false,error:'Insights could not be loaded.'},{status:503}); }
 }
+
+export const GET = withPagesCors(handleGET);
+export const OPTIONS = pagesOptions;

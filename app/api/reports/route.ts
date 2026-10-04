@@ -1,3 +1,4 @@
+import { withPagesCors, pagesOptions } from '../pages';
 import { env } from 'cloudflare:workers';
 import { isAdmin } from '../admin/auth';
 
@@ -8,7 +9,7 @@ const IMAGE_TYPES: Record<string, string> = {'image/jpeg': 'jpg', 'image/png': '
 const message = (error: string, status = 400) => Response.json({ok:false,error},{status,headers:{'Cache-Control':'no-store'}});
 const safe = (value: unknown, limit = 3000) => typeof value === 'string' && value.length <= limit ? value.trim() : null;
 
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   if (!(await isAdmin(request))) return message('Admin login required.',401);
   if (!env.DB) return message('Report storage is unavailable.',503);
   const offset = Number(new URL(request.url).searchParams.get('offset') || '0');
@@ -22,7 +23,7 @@ export async function GET(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   if (!env.DB || !env.BUCKET) return message('Report storage is unavailable. Please try later.',503);
   if (Number(request.headers.get('content-length')) > 7_200_000) return message('Report or photograph is too large.',413);
   let body: any;
@@ -62,3 +63,7 @@ export async function POST(request: Request) {
     return message('Report could not be saved. Please try again.',503);
   }
 }
+
+export const GET = withPagesCors(handleGET);
+export const POST = withPagesCors(handlePOST);
+export const OPTIONS = pagesOptions;

@@ -1,10 +1,11 @@
+import { withPagesCors, pagesOptions, isPagesRequest } from '../../pages';
 import { env } from 'cloudflare:workers';
-import { adminCookie, sameOrigin, validAdminPassword } from '../auth';
+import { adminPagesToken, adminCookie, sameOrigin, validAdminPassword } from '../auth';
 
 export const runtime = 'edge';
 const reply = (error: string, status: number) => Response.json({ok:false,error},{status,headers:{'Cache-Control':'no-store'}});
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   if (!sameOrigin(request)) return reply('Invalid login request.',403);
   if (!env.DB || !env.IAS_ADMIN_PASSWORD_HASH || !env.IAS_ADMIN_SESSION_KEY) return reply('Admin login is unavailable.',503);
   if (Number(request.headers.get('content-length')) > 2048) return reply('Invalid login request.',400);
@@ -22,8 +23,16 @@ export async function POST(request: Request) {
       return reply('Incorrect username or password.',401);
     }
     await env.DB.prepare('DELETE FROM admin_login_attempts WHERE ip_hash = ?').bind(ipHash).run();
+    if (isPagesRequest(request)) {
+      const token = await adminPagesToken();
+      if (!token) return reply('Admin login is unavailable.',503);
+      return Response.json({ok:true,token},{headers:{'Cache-Control':'no-store'}});
+    }
     const cookie = await adminCookie();
     if (!cookie) return reply('Admin login is unavailable.',503);
     return Response.json({ok:true},{headers:{'Set-Cookie':cookie,'Cache-Control':'no-store'}});
   } catch(error) { console.error('Admin login failed',error); return reply('Admin login is temporarily unavailable.',503); }
 }
+
+export const POST = withPagesCors(handlePOST);
+export const OPTIONS = pagesOptions;

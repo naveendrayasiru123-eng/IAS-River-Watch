@@ -1,6 +1,8 @@
 (function () {
   const $ = id => document.getElementById(id);
   let nextOffset = 0, loading = false;
+  const photoUrls=new Set();
+  function clearPhotos(){photoUrls.forEach(url=>URL.revokeObjectURL(url));photoUrls.clear();}
   const status = $('submitted-status'), list = $('submitted-list'), more = $('more-submitted');
   const login = $('admin-login'), loginError = $('admin-login-error'), refresh = $('refresh-submitted'), logout = $('admin-logout');
   const samplePanel=$('sample-review-panel'), sampleForm=$('sample-review-form'), sampleMessage=$('sample-review-message');
@@ -33,7 +35,19 @@
     line(details,'Visible issue',report.degradation);
     line(details,'Notes',report.notes);
     if(report.has_photo) {
-      const img=document.createElement('img'); img.src='/api/reports/'+encodeURIComponent(report.request_id)+'/photo'; img.alt='Photograph submitted with this IAS report'; img.loading='lazy'; details.append(img);
+      const img=document.createElement('img');  img.alt='Photograph submitted with this IAS report'; img.loading='lazy'; details.append(img);
+      let photoLoaded=false;
+      details.addEventListener('toggle',async()=>{
+        if(!details.open || photoLoaded)return;
+        photoLoaded=true;
+        try {
+          const response=await window.IAS_API.fetch('/api/reports/'+encodeURIComponent(report.request_id)+'/photo');
+          if(!response.ok)throw Error('Photograph unavailable.');
+          const url=URL.createObjectURL(await response.blob());
+          if(!details.isConnected){URL.revokeObjectURL(url);return;}
+          photoUrls.add(url);img.src=url;
+        } catch {img.alt='Photograph could not be loaded. Close and reopen the details to retry.';photoLoaded=false;}
+      });
     }
     const mapButton=document.createElement('button'); mapButton.className='btn-secondary';mapButton.type='button';mapButton.textContent='View location on map';
     mapButton.addEventListener('click',()=>window.viewOnMap(Number(report.latitude),Number(report.longitude)));
@@ -44,24 +58,25 @@
     const noteLabel=document.createElement('label');noteLabel.textContent='Review note (at least 10 characters)';const note=document.createElement('textarea');note.required=true;note.minLength=10;note.maxLength=1000;note.value=report.review_note||'';noteLabel.append(note);form.append(noteLabel);
     const button=document.createElement('button');button.type='submit';button.className='btn-secondary';button.textContent='Save review';form.append(button);
     const message=document.createElement('div');message.className='review-message';message.setAttribute('role','status');form.append(message);
-    form.addEventListener('submit',async event=>{event.preventDefault();button.disabled=true;message.textContent='Saving…';try{const response=await fetch('/api/reports/'+encodeURIComponent(report.request_id)+'/review',{method:'PATCH',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:select.value,note:note.value})});const data=await response.json();if(!response.ok)throw new Error(data.error||'Review failed.');message.textContent='Review saved.';report.review_status=select.value;report.review_note=note.value;window.dispatchEvent(new Event('ias-review-updated'));await load(true);}catch(error){message.textContent=error.message;}finally{button.disabled=false;}});
+    form.addEventListener('submit',async event=>{event.preventDefault();button.disabled=true;message.textContent='Saving…';try{const response=await window.IAS_API.fetch('/api/reports/'+encodeURIComponent(report.request_id)+'/review',{method:'PATCH',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:select.value,note:note.value})});const data=await window.IAS_API.json(response);if(!response.ok)throw new Error(data.error||'Review failed.');message.textContent='Review saved.';report.review_status=select.value;report.review_note=note.value;window.dispatchEvent(new Event('ias-review-updated'));await load(true);}catch(error){message.textContent=error.message;}finally{button.disabled=false;}});
     card.append(form);return card;
   }
-  async function loadSamples(){try{const response=await fetch('/api/samples',{credentials:'same-origin',cache:'no-store'});if(!response.ok)throw Error();const data=await response.json();const ids=new Set(data.reviews.map(r=>r.sample_id));[...sampleSelect.options].forEach(o=>{o.textContent=o.textContent.replace(/ · field verified$/,'')+(ids.has(Number(o.value))?' · field verified':'');});$('sample-review-count').textContent=`${ids.size} of ${sampleSelect.options.length} sample candidates field verified.`;}catch{$('sample-review-count').textContent='Sample review status unavailable.';}}
+  async function loadSamples(){try{const response=await window.IAS_API.fetch('/api/samples',{credentials:'same-origin',cache:'no-store'});if(!response.ok)throw Error();const data=await window.IAS_API.json(response);const ids=new Set(data.reviews.map(r=>r.sample_id));[...sampleSelect.options].forEach(o=>{o.textContent=o.textContent.replace(/ · field verified$/,'')+(ids.has(Number(o.value))?' · field verified':'');});$('sample-review-count').textContent=`${ids.size} of ${sampleSelect.options.length} sample candidates field verified.`;}catch{$('sample-review-count').textContent='Sample review status unavailable.';}}
   async function load(reset=false) {
     if(loading)return;
-    if(reset){nextOffset=0;list.replaceChildren();more.hidden=true;}
+    if(reset){clearPhotos();nextOffset=0;list.replaceChildren();more.hidden=true;}
     if(nextOffset===null)return;
     loading=true;status.textContent='Loading saved reports…';
     try {
-      const response=await fetch('/api/reports?offset='+nextOffset,{credentials:'same-origin',cache:'no-store'});
+      const response=await window.IAS_API.fetch('/api/reports?offset='+nextOffset,{credentials:'same-origin',cache:'no-store'});
       if(response.status===401){
+        window.IAS_API.clearToken();clearPhotos();
         status.textContent='Log in as admin to view reports awaiting review.';
         login.hidden=false;refresh.hidden=true;logout.hidden=true;more.hidden=true;samplePanel.hidden=true;list.replaceChildren();return;
       }
       if(!response.ok)throw new Error('Saved reports could not be loaded. Please try again.');
       login.hidden=true;refresh.hidden=false;logout.hidden=false;samplePanel.hidden=false;loadSamples();
-      const data=await response.json();
+      const data=await window.IAS_API.json(response);
       if(!data.ok || !Array.isArray(data.reports))throw new Error('Saved reports could not be loaded.');
       data.reports.forEach(r=>list.append(item(r)));
       nextOffset=data.nextOffset;
@@ -75,15 +90,15 @@
     event.preventDefault();loginError.hidden=true;
     const button=login.querySelector('button');button.disabled=true;button.textContent='Logging in…';
     try {
-      const response=await fetch('/api/admin/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:login.elements.username.value,password:login.elements.password.value})});
-      const data=await response.json();
+      const response=await window.IAS_API.fetch('/api/admin/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:login.elements.username.value,password:login.elements.password.value})});
+      const data=await window.IAS_API.json(response);
       if(!response.ok)throw new Error(data.error || 'Login failed.');
-      login.reset();await load(true);
+      window.IAS_API.setToken(data.token);login.reset();await load(true);
     } catch(error){login.elements.password.value='';loginError.textContent=error.message || 'Login failed.';loginError.hidden=false;}
     finally{button.disabled=false;button.textContent='Log in as admin';}
   });
-  sampleForm.addEventListener('submit',async event=>{event.preventDefault();const button=sampleForm.querySelector('button');button.disabled=true;sampleMessage.textContent='Saving…';try{const response=await fetch('/api/samples',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({sampleId:Number(sampleSelect.value),observedDate:sampleForm.elements.observedDate.value,note:sampleForm.elements.note.value})});const data=await response.json();if(!response.ok)throw new Error(data.error||'Verification failed.');sampleMessage.textContent='Field verification recorded.';sampleForm.elements.note.value='';loadSamples();window.dispatchEvent(new Event('ias-review-updated'));}catch(error){sampleMessage.textContent=error.message;}finally{button.disabled=false;}});
-  logout.addEventListener('click',async()=>{await fetch('/api/admin/logout',{method:'POST',credentials:'same-origin'});await load(true);});
+  sampleForm.addEventListener('submit',async event=>{event.preventDefault();const button=sampleForm.querySelector('button');button.disabled=true;sampleMessage.textContent='Saving…';try{const response=await window.IAS_API.fetch('/api/samples',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({sampleId:Number(sampleSelect.value),observedDate:sampleForm.elements.observedDate.value,note:sampleForm.elements.note.value})});const data=await window.IAS_API.json(response);if(!response.ok)throw new Error(data.error||'Verification failed.');sampleMessage.textContent='Field verification recorded.';sampleForm.elements.note.value='';loadSamples();window.dispatchEvent(new Event('ias-review-updated'));}catch(error){sampleMessage.textContent=error.message;}finally{button.disabled=false;}});
+  logout.addEventListener('click',async()=>{try{await window.IAS_API.fetch('/api/admin/logout',{method:'POST'});}finally{window.IAS_API.clearToken();clearPhotos();await load(true);}});
   refresh.addEventListener('click',()=>load(true));
   more.addEventListener('click',()=>load(false));
   window.addEventListener('ias-report-saved',()=>load(true));

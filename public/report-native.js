@@ -49,9 +49,9 @@
     let report;try{report=payload();if(!report)return;}catch(error){tell(error.message);return;}
     busy=true;button.disabled=true;button.textContent='Saving report…';tell('Waiting for storage confirmation. Keep this page open.');
     try {
-      const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(report),signal:AbortSignal.timeout(60000)});
+      const response=await window.IAS_API.fetch(endpoint,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(report),signal:AbortSignal.timeout(60000)});
       if(!response.ok)throw new Error('Storage did not confirm your report. Please try again.');
-      const result=await response.json();
+      const result=await window.IAS_API.json(response);
       if(result.ok!==true || result.requestId!==requestId)throw new Error(result.error || 'Storage did not confirm your report.');
       const banner=$('success-banner');banner.replaceChildren();const h=document.createElement('h3');h.textContent='Report saved';const p=document.createElement('p');p.textContent='Reference: '+result.requestId+'. Your observation is pending review.';banner.append(h,p);banner.style.display='block';
       tell('Your report has been saved to the project records.');requestId=crypto.randomUUID();form.reset();photo=null;$('report-photo-preview').hidden=true;$('photo-info').textContent='';

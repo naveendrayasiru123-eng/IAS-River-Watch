@@ -1,8 +1,9 @@
+import { withPagesCors, pagesOptions } from '../../../pages';
 import { env } from 'cloudflare:workers';
 import { isAdmin, sameOrigin } from '../../../admin/auth';
 
 export const runtime = 'edge';
-export async function PATCH(request: Request, context: {params: Promise<{id:string}>}) {
+async function handlePATCH(request: Request, context: {params: Promise<{id:string}>}) {
   if (!(await isAdmin(request))) return Response.json({ok:false,error:'Admin login required.'},{status:401});
   if (!sameOrigin(request)) return Response.json({ok:false,error:'Invalid request.'},{status:403});
   if (!env.DB) return Response.json({ok:false,error:'Storage unavailable.'},{status:503});
@@ -17,3 +18,6 @@ export async function PATCH(request: Request, context: {params: Promise<{id:stri
   if (!result.meta.changes) return Response.json({ok:false,error:'Report not found.'},{status:404});
   return Response.json({ok:true,status},{headers:{'Cache-Control':'no-store'}});
 }
+
+export const PATCH = withPagesCors(handlePATCH);
+export const OPTIONS = pagesOptions;
